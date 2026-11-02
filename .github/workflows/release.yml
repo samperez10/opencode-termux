@@ -164,6 +164,7 @@ jobs:
         proot
         resolv-conf
         tar
+        util-linux
       copy-paths: |
         artifact
       env: |
@@ -194,7 +195,7 @@ jobs:
         sh -n install.sh
 
         port=4097
-        opencode serve --hostname 127.0.0.1 --port "$port" >server.log 2>&1 &
+        setsid opencode serve --hostname 127.0.0.1 --port "$port" >server.log 2>&1 &
         server_pid=$!
         server_ready=false
         for attempt in $(seq 1 30); do
@@ -208,7 +209,7 @@ jobs:
           fi
           sleep 1
         done
-        kill "$server_pid" 2>/dev/null || true
+        kill -TERM -- "-$server_pid" 2>/dev/null || true
         wait "$server_pid" 2>/dev/null || true
         if [ "$server_ready" != true ]; then
           cat server.log >&2
