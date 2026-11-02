@@ -1,0 +1,225 @@
+name: Sync latest OpenCode for Termux
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      opencode_version:
+        description: 'OpenCode v2 version to package, or latest'
+        required: false
+        default: 'latest'
+      publish_release:
+        description: 'Publish the release after packaging'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: opencode-termux-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Check upstream release
+    runs-on: ubuntu-24.04
+    outputs:
+      build_needed: ${{ steps.release.outputs.build_needed }}
+      publish: ${{ steps.release.outputs.publish }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Resolve official OpenCode v2 release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_VERSION: ${{ inputs.opencode_version }}
+          REQUESTED_PUBLISH: ${{ inputs.publish_release }}
+        run: |
+          set -euo pipefail
+
+          requested="${REQUESTED_VERSION:-latest}"
+          publish="${REQUESTED_PUBLISH:-true}"
+          if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
+            requested=latest
+            publish=true
+          fi
+
+          if [[ "$requested" == "latest" ]]; then
+            tag="$(curl -fsSL --retry 3 \
+              'https://api.github.com/repos/anomalyco/opencode/releases?per_page=30' |
+              jq -er '[.[] | select(.draft == false and .prerelease == false) | .tag_name | select(test("^v2\\.[0-9]+\\.[0-9]+([-.].*)?$"))][0]')"
+            version="${tag#v}"
+          else
+            version="${requested#v}"
+            tag="v$version"
+          fi
+
+          if [[ ! "$version" =~ ^2\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Refusing unsupported upstream version '$version'; this workflow packages OpenCode v2." >&2
+            exit 1
+          fi
+
+          build_needed=true
+          if [[ "$publish" == "true" ]] && gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists; nothing to package."
+            build_needed=false
+          fi
+
+          {
+            echo "build_needed=$build_needed"
+            echo "publish=$publish"
+            echo "tag=$tag"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Resolved OpenCode $version (publish=$publish, build=$build_needed)"
+
+  package:
+    name: Verify and package Termux ARM64 release
+    needs: prepare
+    if: needs.prepare.outputs.build_needed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      OPENCODE_VERSION: ${{ needs.prepare.outputs.version }}
+      UPSTREAM_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Download and verify official ARM64 binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p upstream dist
+          base="https://github.com/anomalyco/opencode/releases/download/$UPSTREAM_TAG"
+          curl -fL --retry 3 -o upstream/opencode-linux-arm64.tar.gz "$base/opencode-linux-arm64.tar.gz"
+          curl -fL --retry 3 -o upstream/SHA256SUMS "$base/SHA256SUMS"
+          (
+            cd upstream
+            grep -E ' opencode-linux-arm64\.tar\.gz$' SHA256SUMS | sha256sum --check -
+            tar -xzf opencode-linux-arm64.tar.gz
+          )
+          test -x upstream/opencode
+          file upstream/opencode
+          readelf -h upstream/opencode | grep -q 'Machine:.*AArch64'
+
+      - name: Create Termux package
+        run: ./scripts/package-upstream-v2.sh "$OPENCODE_VERSION" upstream/opencode dist
+
+      - name: Validate package
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum --check opencode-termux-aarch64.tar.gz.sha256
+          tar -tzf opencode-termux-aarch64.tar.gz
+          tar -tzf opencode-termux-aarch64.tar.gz | grep -qx 'opencode-termux/bin/opencode'
+          tar -tzf opencode-termux-aarch64.tar.gz | grep -qx 'opencode-termux/libexec/opencode/opencode.bin'
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: opencode-termux-${{ env.OPENCODE_VERSION }}
+          if-no-files-found: error
+          path: |
+            dist/opencode-termux-aarch64.tar.gz
+            dist/opencode-termux-aarch64.tar.gz.sha256
+            dist/release.json
+
+  termux-smoke:
+    name: Smoke test packaged release in Termux ARM64
+    needs:
+      - prepare
+      - package
+    if: needs.prepare.outputs.build_needed == 'true'
+    permissions:
+      actions: read
+      contents: read
+    uses: wallentx/gh-actions/.github/workflows/termux-run.yml@ff9661b38a67bf048e3cd195095f1609e03b6a08
+    with:
+      packages: |
+        ca-certificates
+        coreutils
+        curl
+        glibc
+        glibc-runner
+        resolv-conf
+        tar
+      copy-paths: |
+        artifact
+      env: |
+        EXPECTED_VERSION=${{ needs.prepare.outputs.version }}
+        ARTIFACT_NAME=opencode-termux-${{ needs.prepare.outputs.version }}
+        OPENCODE_TERMUX_NO_UPDATE_CHECK=1
+      host-commands: |
+        set -Eeuo pipefail
+        mkdir -p artifact
+        gh run download "$GITHUB_RUN_ID" \
+          --repo "$GITHUB_REPOSITORY" \
+          --name "$ARTIFACT_NAME" \
+          --dir artifact
+      commands: |
+        set -Eeuo pipefail
+        cd artifact
+        sha256sum --check opencode-termux-aarch64.tar.gz.sha256
+        tar -xzf opencode-termux-aarch64.tar.gz
+        install -m 755 opencode-termux/bin/opencode "$PREFIX/bin/opencode"
+        mkdir -p "$PREFIX/libexec/opencode"
+        install -m 755 opencode-termux/libexec/opencode/opencode.bin \
+          "$PREFIX/libexec/opencode/opencode.bin"
+        install -m 644 opencode-termux/VERSION "$PREFIX/libexec/opencode/VERSION"
+        version_output="$(opencode --version)"
+        printf '%s\n' "$version_output"
+        printf '%s\n' "$version_output" | grep -F "$EXPECTED_VERSION" >/dev/null
+        opencode --help >/dev/null
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    name: Publish verified release
+    needs:
+      - prepare
+      - package
+      - termux-smoke
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download verified package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: opencode-termux-${{ needs.prepare.outputs.version }}
+          path: dist
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: OpenCode ${{ needs.prepare.outputs.version }} for Termux
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          body: |
+            OpenCode ${{ needs.prepare.outputs.version }} packaged for ARM64 Termux.
+
+            The official upstream ARM64 binary is checksum-verified, then wrapped
+            for Termux using `glibc-runner`. Install with:
+
+            ```sh
+            pkg install -y curl
+            curl -fsSL https://raw.githubusercontent.com/samperez10/opencode-termux/main/install.sh | sh
+            ```
+          files: |
+            dist/opencode-termux-aarch64.tar.gz
+            dist/opencode-termux-aarch64.tar.gz.sha256
+            dist/release.json
