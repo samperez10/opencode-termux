@@ -46,9 +46,33 @@ if [ "${OPENCODE_TERMUX_NO_UPDATE_CHECK:-0}" != "1" ] && command -v curl >/dev/n
             "https://github.com/$repository/releases/latest/download/release.json" 2>/dev/null |
             sed -n 's/.*"version": "\([^"]*\)".*/\1/p' | sed -n '1p' || true)"
         installed="$(sed -n '1p' "$VERSION_FILE" 2>/dev/null || true)"
-        if [ -n "$latest" ] && [ -n "$installed" ] && [ "$latest" != "$installed" ]; then
+        skipped="$(sed -n '1p' "$CACHE_DIR/skipped-version" 2>/dev/null || true)"
+        if [ -n "$latest" ] && [ -n "$installed" ] && \
+            [ "$latest" != "$installed" ] && [ "$latest" != "$skipped" ]; then
             echo "OpenCode Termux update available: $installed -> $latest" >&2
-            echo "Update with: curl -fsSL https://raw.githubusercontent.com/$repository/main/install.sh | sh" >&2
+            installer_url="https://github.com/$repository/releases/latest/download/install.sh"
+            if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+                printf 'Update now? [y]es / [N]ot now / [s]kip this version: ' > /dev/tty
+                IFS= read -r update_answer < /dev/tty || update_answer=n
+                case "$update_answer" in
+                    y|Y|yes|YES|Yes)
+                        updater="$(mktemp "${TMPDIR:-$PREFIX/tmp}/opencode-update.XXXXXX")"
+                        if curl -fsSL --retry 3 -o "$updater" "$installer_url" && sh "$updater"; then
+                            rm -f "$updater"
+                            OPENCODE_TERMUX_NO_UPDATE_CHECK=1 exec "$0" "$@"
+                        fi
+                        rm -f "$updater"
+                        echo "OpenCode update failed; continuing with $installed." >&2
+                        ;;
+                    s|S|skip|SKIP|Skip)
+                        printf '%s\n' "$latest" > "$CACHE_DIR/skipped-version"
+                        echo "Skipped OpenCode $latest." >&2
+                        ;;
+                    *) ;;
+                esac
+            else
+                echo "Update with: curl -fsSL $installer_url | sh" >&2
+            fi
         fi
     fi
 fi

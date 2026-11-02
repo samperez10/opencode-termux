@@ -13,7 +13,7 @@ From ARM64 Termux:
 
 ```sh
 pkg install -y curl
-curl -fsSL https://raw.githubusercontent.com/samperez10/opencode-termux/main/install.sh | sh
+curl -fsSL https://github.com/samperez10/opencode-termux/releases/latest/download/install.sh | sh
 ```
 
 Then run:
@@ -34,7 +34,7 @@ The installer:
 Preview the selected release without changing the device:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/samperez10/opencode-termux/main/install.sh -o install-opencode.sh
+curl -fsSL https://github.com/samperez10/opencode-termux/releases/latest/download/install.sh -o install-opencode.sh
 sh install-opencode.sh --dry-run
 ```
 
@@ -50,8 +50,10 @@ a new stable v2 release appears, the workflow:
 5. verifies the new package checksum and archive layout;
 6. publishes a same-version release in this repository.
 
-The launcher checks this repository once per day, including its first run, and
-prints an update command when a newer package exists. Set
+The launcher checks this repository once per day, including its first run. In
+an interactive terminal it offers **Yes**, **Not now**, and **Skip this
+version** choices. Non-interactive runs print the update command and continue.
+Set
 `OPENCODE_TERMUX_NO_UPDATE_CHECK=1` to disable that network check.
 
 To update immediately, run the installer command again.

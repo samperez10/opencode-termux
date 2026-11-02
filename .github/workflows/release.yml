@@ -17,6 +17,11 @@ on:
         required: false
         type: boolean
         default: true
+      rebuild_existing:
+        description: 'Rebuild and replace assets for an existing release'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -42,6 +47,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_VERSION: ${{ inputs.opencode_version }}
           REQUESTED_PUBLISH: ${{ inputs.publish_release }}
+          REBUILD_EXISTING: ${{ inputs.rebuild_existing }}
         run: |
           set -euo pipefail
 
@@ -68,7 +74,8 @@ jobs:
           fi
 
           build_needed=true
-          if [[ "$publish" == "true" ]] && gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          if [[ "$publish" == "true" && "${REBUILD_EXISTING:-false}" != "true" ]] && \
+              gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $tag already exists; nothing to package."
             build_needed=false
           fi
@@ -113,7 +120,9 @@ jobs:
           readelf -h upstream/opencode | grep -q 'Machine:.*AArch64'
 
       - name: Create Termux package
-        run: ./scripts/package-upstream-v2.sh "$OPENCODE_VERSION" upstream/opencode dist
+        run: |
+          ./scripts/package-upstream-v2.sh "$OPENCODE_VERSION" upstream/opencode dist
+          install -m 755 install.sh dist/install.sh
 
       - name: Validate package
         shell: bash
@@ -134,6 +143,7 @@ jobs:
             dist/opencode-termux-aarch64.tar.gz
             dist/opencode-termux-aarch64.tar.gz.sha256
             dist/release.json
+            dist/install.sh
 
   termux-smoke:
     name: Smoke test packaged release in Termux ARM64
@@ -181,6 +191,7 @@ jobs:
         printf '%s\n' "$version_output"
         printf '%s\n' "$version_output" | grep -F "$EXPECTED_VERSION" >/dev/null
         opencode --help >/dev/null
+        sh -n install.sh
     secrets:
       github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -217,9 +228,10 @@ jobs:
 
             ```sh
             pkg install -y curl
-            curl -fsSL https://raw.githubusercontent.com/samperez10/opencode-termux/main/install.sh | sh
+            curl -fsSL https://github.com/samperez10/opencode-termux/releases/latest/download/install.sh | sh
             ```
           files: |
             dist/opencode-termux-aarch64.tar.gz
             dist/opencode-termux-aarch64.tar.gz.sha256
             dist/release.json
+            dist/install.sh
