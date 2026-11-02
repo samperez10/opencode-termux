@@ -62,10 +62,10 @@ if ! command -v sha256sum >/dev/null 2>&1 || ! command -v tar >/dev/null 2>&1; t
     printf 'Installing archive and checksum tools…\n'
     pkg install -y coreutils tar || fail "could not install coreutils and tar"
 fi
-if ! command -v grun >/dev/null 2>&1; then
-    printf 'Installing the Termux glibc runtime…\n'
+if ! command -v proot >/dev/null 2>&1 || [ ! -d "$PREFIX/glibc/lib" ]; then
+    printf 'Installing PRoot and the Termux glibc runtime…\n'
     pkg install -y glibc-repo || fail "could not enable the Termux glibc repository"
-    pkg install -y glibc-runner || fail "could not install glibc-runner"
+    pkg install -y glibc proot || fail "could not install glibc and proot"
 fi
 
 WORK_DIR="$(mktemp -d "${TMPDIR:-$PREFIX/tmp}/opencode-install.XXXXXX")"
@@ -92,8 +92,11 @@ PACKAGE_VERSION="$(sed -n '1p' "$PACKAGE/VERSION")"
 printf '%s\n' "$PACKAGE_VERSION" | grep -Eq '^2\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$' \
     || fail "release contains an invalid OpenCode version"
 
-grun "$PACKAGE/libexec/opencode/opencode.bin" --version >/dev/null \
-    || fail "the downloaded OpenCode binary did not start"
+(
+    unset LD_PRELOAD LD_LIBRARY_PATH
+    proot -b "$PREFIX/glibc/lib:/lib" \
+        "$PACKAGE/libexec/opencode/opencode.bin" --version >/dev/null
+) || fail "the downloaded OpenCode binary did not start"
 
 mkdir -p "$PREFIX/bin" "$PREFIX/libexec/opencode"
 install -m 755 "$PACKAGE/libexec/opencode/opencode.bin" \

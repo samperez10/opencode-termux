@@ -4,7 +4,8 @@ Automatic ARM64 Termux packages for the latest stable
 [OpenCode](https://github.com/anomalyco/opencode) v2 release.
 
 This community project verifies the official upstream ARM64 artifact, packages
-it with a Termux launcher, and runs it through Termux's `glibc-runner`. The
+it with a Termux launcher, and runs it through PRoot with Termux's glibc
+runtime. The
 installed command is simply `opencode`.
 
 ## Install
@@ -25,7 +26,7 @@ opencode
 The installer:
 
 - verifies that it is running in ARM64 Termux;
-- installs `glibc-runner` from the Termux glibc repository when needed;
+- installs `proot` and `glibc` from Termux repositories when needed;
 - downloads the latest release from this repository;
 - verifies its SHA-256 checksum before extraction;
 - starts the downloaded binary once before activating it;
@@ -68,16 +69,17 @@ The **Sync latest OpenCode for Termux** workflow accepts:
 Scheduled builds only publish versions that do not already have a release.
 Failures stop before publication.
 
-## Why `glibc-runner`?
+## Why PRoot and glibc?
 
 Official OpenCode ARM64 releases target GNU/Linux. Android uses Bionic rather
 than glibc, so the official executable cannot be launched directly by Termux.
-Termux's `glibc-runner` supplies the compatible loader and runtime while keeping
-the upstream OpenCode executable unchanged.
+The launcher binds Termux's glibc loader at `/lib` through PRoot while keeping
+the upstream OpenCode executable unchanged. This is important because Bun uses
+its executable path to spawn OpenCode's background server; launching only the
+parent through `ld.so` breaks that child process.
 
-The v2.2.5 artifact was verified and smoke-tested on an ARM64 Termux device with
-both `opencode --version` and `opencode --help` before this packaging approach
-was adopted.
+The v2.2.5 artifact was verified on an ARM64 Termux device with the full TUI and
+background server, in addition to `opencode --version` and `opencode --help`.
 
 ## Project layout
 

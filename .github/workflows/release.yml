@@ -161,7 +161,7 @@ jobs:
         coreutils
         curl
         glibc
-        glibc-runner
+        proot
         resolv-conf
         tar
       copy-paths: |
@@ -192,6 +192,29 @@ jobs:
         printf '%s\n' "$version_output" | grep -F "$EXPECTED_VERSION" >/dev/null
         opencode --help >/dev/null
         sh -n install.sh
+
+        port=4097
+        opencode serve --hostname 127.0.0.1 --port "$port" >server.log 2>&1 &
+        server_pid=$!
+        server_ready=false
+        for attempt in $(seq 1 30); do
+          if ! kill -0 "$server_pid" 2>/dev/null; then
+            cat server.log >&2
+            wait "$server_pid"
+          fi
+          if curl -sS -o /dev/null "http://127.0.0.1:$port/"; then
+            server_ready=true
+            break
+          fi
+          sleep 1
+        done
+        kill "$server_pid" 2>/dev/null || true
+        wait "$server_pid" 2>/dev/null || true
+        if [ "$server_ready" != true ]; then
+          cat server.log >&2
+          echo "OpenCode server did not become reachable" >&2
+          exit 1
+        fi
     secrets:
       github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -224,7 +247,7 @@ jobs:
             OpenCode ${{ needs.prepare.outputs.version }} packaged for ARM64 Termux.
 
             The official upstream ARM64 binary is checksum-verified, then wrapped
-            for Termux using `glibc-runner`. Install with:
+            for Termux using PRoot and the Termux glibc runtime. Install with:
 
             ```sh
             pkg install -y curl

@@ -77,16 +77,24 @@ if [ "${OPENCODE_TERMUX_NO_UPDATE_CHECK:-0}" != "1" ] && command -v curl >/dev/n
     fi
 fi
 
-if ! command -v grun >/dev/null 2>&1; then
-    echo "opencode: glibc-runner is required; run: pkg install glibc-repo && pkg install glibc-runner" >&2
+if ! command -v proot >/dev/null 2>&1; then
+    echo "opencode: proot is required; run: pkg install proot" >&2
     exit 127
 fi
 if [ ! -x "$BINARY" ]; then
     echo "opencode: missing executable: $BINARY" >&2
     exit 127
 fi
+if [ ! -d "$PREFIX/glibc/lib" ]; then
+    echo "opencode: the Termux glibc runtime is missing; run: pkg install glibc-repo && pkg install glibc" >&2
+    exit 127
+fi
 
-exec grun "$BINARY" "$@"
+# The official binary expects /lib/ld-linux-aarch64.so.1. PRoot supplies that
+# path without rewriting Bun's standalone executable, which would invalidate
+# its embedded offsets. Clearing Termux's Bionic preload avoids mixing ABIs.
+unset LD_PRELOAD LD_LIBRARY_PATH
+exec proot -b "$PREFIX/glibc/lib:/lib" "$BINARY" "$@"
 WRAPPER
 chmod 755 "$PACKAGE_DIR/bin/opencode"
 
@@ -100,7 +108,7 @@ cat > "$OUTPUT_DIR/release.json" <<EOF
 {
   "version": "$VERSION",
   "target": "aarch64-linux-android",
-  "runtime": "termux-glibc-runner",
+  "runtime": "termux-proot-glibc",
   "archive": "$ARCHIVE"
 }
 EOF
