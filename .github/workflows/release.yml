@@ -214,7 +214,7 @@ jobs:
           path: dist
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3, Node 24
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: OpenCode ${{ needs.prepare.outputs.version }} for Termux
