@@ -42,20 +42,15 @@ esac
 command -v curl >/dev/null 2>&1 || fail "curl is required; run: pkg install curl"
 
 if [ "$VERSION" = "latest" ]; then
-    RELEASE_JSON="$(curl -fsSL --retry 3 \
-        "https://api.github.com/repos/$REPOSITORY/releases/latest")" \
-        || fail "could not find a published release in $REPOSITORY"
-    TAG="$(printf '%s\n' "$RELEASE_JSON" |
-        sed -n 's/.*"tag_name": "\([^"]*\)".*/\1/p' | sed -n '1p')"
-    [ -n "$TAG" ] || fail "release metadata did not contain a tag"
+    TAG=latest
+    BASE_URL="https://github.com/$REPOSITORY/releases/latest/download"
 else
     case "$VERSION" in v*) TAG="$VERSION" ;; *) TAG="v$VERSION" ;; esac
+    printf '%s\n' "${TAG#v}" | grep -Eq '^2\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$' \
+        || fail "release $TAG is not a supported OpenCode v2 release"
+    BASE_URL="https://github.com/$REPOSITORY/releases/download/$TAG"
 fi
 
-printf '%s\n' "${TAG#v}" | grep -Eq '^2\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$' \
-    || fail "release $TAG is not a supported OpenCode v2 release"
-
-BASE_URL="https://github.com/$REPOSITORY/releases/download/$TAG"
 printf 'OpenCode %s for ARM64 Termux\n' "${TAG#v}"
 
 if [ "$DRY_RUN" -eq 1 ]; then
@@ -93,6 +88,9 @@ tar -xzf "$WORK_DIR/$ARCHIVE" -C "$WORK_DIR/payload" \
 PACKAGE="$WORK_DIR/payload/opencode-termux"
 test -x "$PACKAGE/bin/opencode" || fail "release is missing the Termux launcher"
 test -x "$PACKAGE/libexec/opencode/opencode.bin" || fail "release is missing the OpenCode binary"
+PACKAGE_VERSION="$(sed -n '1p' "$PACKAGE/VERSION")"
+printf '%s\n' "$PACKAGE_VERSION" | grep -Eq '^2\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$' \
+    || fail "release contains an invalid OpenCode version"
 
 grun "$PACKAGE/libexec/opencode/opencode.bin" --version >/dev/null \
     || fail "the downloaded OpenCode binary did not start"
@@ -107,6 +105,6 @@ mv -f "$PREFIX/libexec/opencode/.opencode.bin.new" "$PREFIX/libexec/opencode/ope
 mv -f "$PREFIX/libexec/opencode/.VERSION.new" "$PREFIX/libexec/opencode/VERSION"
 mv -f "$PREFIX/bin/.opencode.new" "$PREFIX/bin/opencode"
 
-printf 'Installed successfully: '
+printf 'Installed OpenCode %s successfully: ' "$PACKAGE_VERSION"
 opencode --version
 printf 'Run: opencode\n'

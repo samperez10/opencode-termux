@@ -43,8 +43,8 @@ if [ "${OPENCODE_TERMUX_NO_UPDATE_CHECK:-0}" != "1" ] && command -v curl >/dev/n
         : > "$STAMP"
         repository="${OPENCODE_TERMUX_REPO:-samperez10/opencode-termux}"
         latest="$(curl -fsSL --connect-timeout 3 --max-time 5 \
-            "https://api.github.com/repos/$repository/releases/latest" 2>/dev/null |
-            sed -n 's/.*"tag_name": "v\([^"]*\)".*/\1/p' | sed -n '1p' || true)"
+            "https://github.com/$repository/releases/latest/download/release.json" 2>/dev/null |
+            sed -n 's/.*"version": "\([^"]*\)".*/\1/p' | sed -n '1p' || true)"
         installed="$(sed -n '1p' "$VERSION_FILE" 2>/dev/null || true)"
         if [ -n "$latest" ] && [ -n "$installed" ] && [ "$latest" != "$installed" ]; then
             echo "OpenCode Termux update available: $installed -> $latest" >&2
