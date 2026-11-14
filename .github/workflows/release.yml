@@ -195,6 +195,23 @@ jobs:
         opencode --help >/dev/null
         sh -n install.sh
 
+        lifecycle_root="$(mktemp -d)"
+        mkdir -p "$lifecycle_root/config" "$lifecycle_root/state" "$lifecycle_root/cache"
+        lifecycle_output="$(
+          XDG_CONFIG_HOME="$lifecycle_root/config" \
+          XDG_STATE_HOME="$lifecycle_root/state" \
+          XDG_CACHE_HOME="$lifecycle_root/cache" \
+          timeout 30 opencode api GET /api/info
+        )"
+        printf "%s\n" "$lifecycle_output"
+        printf "%s\n" "$lifecycle_output" | grep -F "\"version\":\"$EXPECTED_VERSION\"" >/dev/null
+        lifecycle_pid="$(printf "%s\n" "$lifecycle_output" | sed -n "s/.*\"pid\":\([0-9][0-9]*\).*/\1/p")"
+        test -n "$lifecycle_pid"
+        if kill -0 "$lifecycle_pid" 2>/dev/null; then
+          echo "OpenCode background service $lifecycle_pid survived CLI exit" >&2
+          exit 1
+        fi
+
         port=4097
         setsid opencode serve --hostname 127.0.0.1 --port "$port" >server.log 2>&1 &
         server_pid=$!

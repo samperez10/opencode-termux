@@ -94,7 +94,7 @@ fi
 # path without rewriting Bun's standalone executable, which would invalidate
 # its embedded offsets. Clearing Termux's Bionic preload avoids mixing ABIs.
 unset LD_PRELOAD LD_LIBRARY_PATH
-exec proot -b "$PREFIX/glibc/lib:/lib" "$BINARY" "$@"
+exec proot --kill-on-exit -b "$PREFIX/glibc/lib:/lib" "$BINARY" "$@"
 WRAPPER
 chmod 755 "$PACKAGE_DIR/bin/opencode"
 
