@@ -130,9 +130,10 @@ jobs:
           set -euo pipefail
           cd dist
           sha256sum --check opencode-termux-aarch64.tar.gz.sha256
-          tar -tzf opencode-termux-aarch64.tar.gz
-          tar -tzf opencode-termux-aarch64.tar.gz | grep -qx 'opencode-termux/bin/opencode'
-          tar -tzf opencode-termux-aarch64.tar.gz | grep -qx 'opencode-termux/libexec/opencode/opencode.bin'
+          tar -tzf opencode-termux-aarch64.tar.gz > archive-contents.txt
+          cat archive-contents.txt
+          grep -Fxq 'opencode-termux/bin/opencode' archive-contents.txt
+          grep -Fxq 'opencode-termux/libexec/opencode/opencode.bin' archive-contents.txt
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2, Node 24
